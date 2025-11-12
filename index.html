@@ -3,20 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🌾 Ma Petite Ferme 2D</title>
+    <title>🌾 FarmRush</title>
     <link rel="stylesheet" href="styles/style.css">
 </head>
 <body>
-    <div class="game-container">
-        <div class="hud">
-            <div class="hud-title">🌾 Ma Petite Ferme</div>
-            <div class="hud-stats">
-                <div>💰 <span id="money">50</span>€</div>
-                <div>🌟 <span id="xp">0</span> XP</div>
+    <!-- Page d'accueil -->
+    <div id="homeScreen" class="home-screen">
+        <div class="home-content">
+            <div class="home-header">
+                <h1 class="game-title">🌾 FarmRush 🚜</h1>
+                <p class="game-subtitle">Construisez votre empire agricole!</p>
+            </div>
+
+            <div class="home-info">
+                <div class="info-section">
+                    <h2>📖 À Propos du Jeu</h2>
+                    <p>Gérez votre petite ferme, plantez des cultures, élevez des poules et transformez vos récoltes en produits finis pour gagner de l'argent!</p>
+                </div>
+
+                <div class="info-section">
+                    <h2>🎮 Contrôles</h2>
+                    <div class="controls-list">
+                        <div class="control-item">
+                            <span class="control-key">Souris</span>
+                            <span>Se déplacer</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="control-key">Clic</span>
+                            <span>Interagir avec une parcelle</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="control-key">P</span>
+                            <span>Ouvrir/Fermer le panier (ça marche pas clique sur l'icone en haut à droite)</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="control-key">S</span>
+                            <span>Ouvrir/Fermer la boutique (ça marche pas clique sur l'icone en haut à droite)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="info-section">
+                    <h2>🎯 Objectif</h2>
+                    <p>Collectez des ressources, faites de bonnes affaires et devenez le meilleur agriculteur!</p>
+                </div>
+            </div>
+
+            <div class="home-form">
+                <label for="farmNameInput">🏠 Nom de votre ferme :</label>
+                <input type="text" id="farmNameInput" placeholder="Ex: La Ferme des Rêves" maxlength="30">
+                <button class="btn btn-start" onclick="startGame()">🚀 COMMENCER</button>
+            </div>
+
+            <div class="home-footer">
+                <p>Créé avec ❤️ pour les passionnés d'agriculture</p>
             </div>
         </div>
+    </div>
 
-        <canvas id="gameCanvas"></canvas>
+    <!-- Jeu -->
+    <div id="gameScreen" class="game-screen" style="display: none;">
+        <div class="game-container">
+            <div class="hud">
+                <div class="hud-left">
+                    <div class="hud-title" id="farmNameDisplay">🌾 Ma Petite Ferme</div>
+                </div>
+                <div class="hud-stats">
+                    <div>💰 <span id="money">50</span>€</div>
+                    <div>🌟 <span id="xp">0</span> XP</div>
+                </div>
+                <div class="hud-right">
+                    <button class="hud-btn" onclick="toggleShop()">📦</button>
+                    <button class="hud-btn" onclick="toggleControls()">❓</button>
+                </div>
+            </div>
+
+            <canvas id="gameCanvas"></canvas>
 
         <div class="shop-panel">
             <div class="shop-title">📦 Ressources</div>
@@ -51,11 +113,34 @@
             <div id="buildingsList"></div>
         </div>
 
-        <div class="controls-info">
-            <div><strong>🎮 Contrôles:</strong></div>
-            <div>🖱️ Cliquez pour déplacer</div>
-            <div>🌾 Marchez sur le blé pour récolter</div>
-            <div>🏗️ Cliquez sur bâtiments pour interagir</div>
+        <!-- Modal des contrôles -->
+        <div id="controlsModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>🎮 Contrôles du Jeu</h2>
+                    <button class="modal-close" onclick="toggleControls()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="controls-list">
+                        <div class="control-item">
+                            <span class="control-key">↑↓←→</span>
+                            <span>Se déplacer</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="control-key">Clic</span>
+                            <span>Interagir avec une parcelle</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="control-key">P</span>
+                            <span>Ouvrir/Fermer le panier</span>
+                        </div>
+                        <div class="control-item">
+                            <span class="control-key">S</span>
+                            <span>Ouvrir/Fermer la boutique</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div id="sellModal" class="sell-modal">
@@ -69,6 +154,8 @@
             </div>
         </div>
     </div>
+    </div>
+
     <script src="scripts/script.js"></script>
 </body>
 </html>
