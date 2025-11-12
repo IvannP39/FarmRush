@@ -915,9 +915,15 @@ function buyUpgrade(upgradeKey) {
             gameState.field.gridWidth += 1;
             gameState.field.gridHeight += 1;
             initField();
+            // Si le poulailler existe déjà, repositionner et réinitialiser ses parcelles
+            if (gameState.chickenCoop.owned) {
+                updateLayoutPositions();
+                initChickenCoop();
+            }
         } else if (upgradeKey === 'coopExpand') {
             gameState.chickenCoop.gridWidth += 1;
             gameState.chickenCoop.gridHeight += 1;
+            updateLayoutPositions();
             initChickenCoop();
         } else if (upgradeKey === 'fastGrowth') {
             gameState.upgrades.growthSpeed += 0.2;
@@ -986,15 +992,32 @@ function renderShop() {
         const cost = upgrade.cost * (upgrade.currentLevel + 1);
         const maxed = upgrade.currentLevel >= upgrade.maxLevel;
 
+        // Déterminer si l'upgrade est disponible (ex: coopExpand nécessite poulailler possédé)
+        let locked = false;
+        if (key === 'coopExpand' && !gameState.chickenCoop.owned) locked = true;
+
         const div = document.createElement('div');
-        div.className = 'shop-item';
+        div.className = `shop-item ${locked ? 'locked' : ''}`;
+
+        // Bouton (grisé si locked ou maxed)
+        let buttonHtml = '';
+        if (!maxed) {
+            if (locked) {
+                buttonHtml = `<button class="btn" disabled title="Débloquez le poulailler d'abord">Améliorer</button>`;
+            } else {
+                buttonHtml = `<button class="btn" onclick="buyUpgrade('${key}')">Améliorer</button>`;
+            }
+        } else {
+            buttonHtml = '';
+        }
+
         div.innerHTML = `
                     <div class="shop-header">
                         <span class="shop-name">${upgrade.name}</span>
                         <span>${maxed ? 'MAX' : cost + '€'}</span>
                     </div>
                     <div class="shop-desc">${upgrade.desc} (Niv. ${upgrade.currentLevel}/${upgrade.maxLevel})</div>
-                    ${!maxed ? `<button class="btn" onclick="buyUpgrade('${key}')">Améliorer</button>` : ''}
+                    ${buttonHtml}
                 `;
         upgradesList.appendChild(div);
     }
