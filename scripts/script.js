@@ -621,6 +621,18 @@ function initCanvasListeners() {
         gameState.player.targetX = clickX;
         gameState.player.targetY = clickY;
     });
+
+    // Événement molette souris pour descendre
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault(); // Empêcher le scroll par défaut du navigateur
+        
+        // Chaque tick de molette = 50 pixels de déplacement
+        const scrollAmount = e.deltaY > 0 ? 50 : -50;
+        gameState.player.targetY += scrollAmount;
+        
+        // Limiter le joueur dans des limites raisonnables
+        gameState.player.targetY = Math.max(gameState.player.targetY, 0);
+    }, { passive: false }); // passive: false pour pouvoir preventDefault()
 }
 
 // Récolter une parcelle
