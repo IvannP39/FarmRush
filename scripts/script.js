@@ -1,13 +1,58 @@
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+// ===== PAGE D'ACCUEIL =====
+let gameStarted = false;
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+function startGame() {
+    const farmName = document.getElementById('farmNameInput').value.trim();
+    if (!farmName) {
+        alert('Veuillez entrer un nom pour votre ferme!');
+        return;
+    }
+    
+    // Masquer la page d'accueil et afficher le jeu
+    document.getElementById('homeScreen').style.display = 'none';
+    document.getElementById('gameScreen').style.display = 'block';
+    
+    // Mettre à jour le titre avec le nom de la ferme
+    document.getElementById('farmNameDisplay').textContent = `🌾 ${farmName}`;
+    
+    // Initialiser le canvas maintenant que le DOM est prêt
+    initializeCanvas();
+    
+    gameStarted = true;
+    initGame();
+}
 
-window.addEventListener('resize', () => {
+function toggleShop() {
+    const panel = document.querySelector('.shop-panel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleControls() {
+    const modal = document.getElementById('controlsModal');
+    modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
+}
+
+// ===== JEU =====
+
+let canvas;
+let ctx;
+
+function initializeCanvas() {
+    canvas = document.getElementById('gameCanvas');
+    ctx = canvas.getContext('2d');
+    
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-});
+    
+    window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    });
+    
+    // Initialiser les event listeners du canvas une fois qu'il est prêt
+    initCanvasListeners();
+}
+
 
 // Taille d'une tuile
 const TILE_SIZE = 60;
@@ -43,13 +88,21 @@ const gameState = {
     },
     buildings: {
         mill: { owned: false, x: 800, y: 300, width: 100, height: 100 },
-        chickenCoop: { owned: false, x: 1000, y: 300, width: 100, height: 100 },
         orchard: { owned: false, x: 1200, y: 300, width: 100, height: 100 },
         market: { owned: true, x: 800, y: 150, width: 100, height: 100 }
     },
+    chickenCoop: {
+        owned: false,
+        gridWidth: 4,
+        gridHeight: 4,
+        startX: 100,
+        startY: 450,
+        plots: []
+    },
     upgrades: {
         fieldSize: 1,
-        growthSpeed: 1
+        growthSpeed: 1,
+        eggSpeed: 1
     }
 };
 
@@ -79,14 +132,22 @@ const PLOT_STATES = {
 };
 
 const GROWTH_TIME = 5000; // 5 secondes pour pousser complètement
+const EGG_SPAWN_TIME = 8000; // 8 secondes pour qu'un œuf apparaisse
 
 // Shop data
 const shopData = {
     upgrades: {
         fieldExpand: {
-            name: '📐 Agrandir Champ',
+            name: '📐 Agrandir Champ Blé',
             cost: 100,
-            desc: 'Ajoute une rangée au champ',
+            desc: 'Ajoute une rangée au champ de blé',
+            maxLevel: 5,
+            currentLevel: 0
+        },
+        coopExpand: {
+            name: '🐔 Agrandir Poulailler',
+            cost: 150,
+            desc: 'Ajoute une rangée au poulailler',
             maxLevel: 5,
             currentLevel: 0
         },
@@ -96,11 +157,18 @@ const shopData = {
             desc: 'Blé pousse 20% plus vite',
             maxLevel: 5,
             currentLevel: 0
+        },
+        fastEggs: {
+            name: '🥚 Œufs Rapides',
+            cost: 200,
+            desc: 'Œufs apparaissent 20% plus vite',
+            maxLevel: 5,
+            currentLevel: 0
         }
     },
     buildings: {
         mill: { name: '⚙️ Moulin', cost: 150, desc: 'Transforme blé en farine' },
-        chickenCoop: { name: '🐔 Poulailler', cost: 300, desc: 'Produit des œufs' },
+        chickenCoop: { name: '🐔 Poulailler', cost: 300, desc: 'Parcelles pour récolter œufs' },
         orchard: { name: '🍎 Verger', cost: 500, desc: 'Produit des fruits' }
     }
 };
@@ -116,7 +184,38 @@ function initField() {
                 state: PLOT_STATES.EMPTY,
                 growthStartTime: Date.now(),
                 worldX: gameState.field.startX + x * TILE_SIZE,
-                worldY: gameState.field.startY + y * TILE_SIZE
+                worldY: gameState.field.startY + y * TILE_SIZE,
+                type: 'wheat'
+            });
+        }
+    }
+    // Mettre à jour les positions liées après (empêche chevauchement)
+    updateLayoutPositions();
+}
+
+// Mettre à jour les positions liées (empêcher chevauchement)
+function updateLayoutPositions() {
+    // Garantir que le poulailler est toujours placé en dessous du champ
+    const gap = 40; // pixels entre le champ et le poulailler
+    gameState.chickenCoop.startX = gameState.field.startX; // aligner horizontalement
+    gameState.chickenCoop.startY = gameState.field.startY + gameState.field.gridHeight * TILE_SIZE + gap;
+}
+
+// Initialiser le poulailler
+function initChickenCoop() {
+    if (!gameState.chickenCoop.owned) return;
+
+    gameState.chickenCoop.plots = [];
+    for (let y = 0; y < gameState.chickenCoop.gridHeight; y++) {
+        for (let x = 0; x < gameState.chickenCoop.gridWidth; x++) {
+            gameState.chickenCoop.plots.push({
+                x: x,
+                y: y,
+                state: PLOT_STATES.EMPTY,
+                growthStartTime: Date.now(),
+                worldX: gameState.chickenCoop.startX + x * TILE_SIZE,
+                worldY: gameState.chickenCoop.startY + y * TILE_SIZE,
+                type: 'egg'
             });
         }
     }
@@ -126,7 +225,9 @@ function initField() {
 function updateGrowth() {
     const now = Date.now();
     const growthTime = GROWTH_TIME / gameState.upgrades.growthSpeed;
+    const eggTime = EGG_SPAWN_TIME / gameState.upgrades.eggSpeed;
 
+    // Blé
     gameState.field.plots.forEach(plot => {
         if (plot.state === PLOT_STATES.READY) return;
 
@@ -143,6 +244,18 @@ function updateGrowth() {
             plot.state = PLOT_STATES.GROWING_1;
         }
     });
+
+    // Œufs du poulailler
+    if (gameState.chickenCoop.owned && gameState.chickenCoop.plots) {
+        gameState.chickenCoop.plots.forEach(plot => {
+            if (plot.state === PLOT_STATES.READY) return;
+
+            const elapsed = now - plot.growthStartTime;
+            if (elapsed >= eggTime) {
+                plot.state = PLOT_STATES.READY;
+            }
+        });
+    }
 }
 
 // Dessiner une parcelle
@@ -150,7 +263,56 @@ function drawPlot(plot) {
     const screenX = plot.worldX - gameState.camera.x;
     const screenY = plot.worldY - gameState.camera.y;
 
-    // Sol
+    if (plot.type === 'egg') {
+        // Sol pour nid
+        ctx.fillStyle = '#D2B48C';
+        ctx.fillRect(screenX, screenY, TILE_SIZE - 2, TILE_SIZE - 2);
+
+        // Paille/foin
+        ctx.strokeStyle = '#DAA520';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 5; i++) {
+            const randX = screenX + Math.random() * (TILE_SIZE - 10);
+            const randY = screenY + Math.random() * (TILE_SIZE - 10);
+            ctx.beginPath();
+            ctx.moveTo(randX, randY);
+            ctx.lineTo(randX + 5, randY + 8);
+            ctx.stroke();
+        }
+
+        // Nid
+        ctx.fillStyle = '#8B4513';
+        ctx.beginPath();
+        ctx.arc(screenX + TILE_SIZE / 2, screenY + TILE_SIZE / 2, 20, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Œuf si prêt
+        if (plot.state === PLOT_STATES.READY) {
+            ctx.fillStyle = '#FFF8DC';
+            ctx.beginPath();
+            ctx.ellipse(screenX + TILE_SIZE / 2, screenY + TILE_SIZE / 2, 12, 16, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#DEB887';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Brillance
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.beginPath();
+            ctx.ellipse(screenX + TILE_SIZE / 2 - 3, screenY + TILE_SIZE / 2 - 4, 4, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Effet brillant supplémentaire
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.beginPath();
+            ctx.arc(screenX + TILE_SIZE / 2, screenY + TILE_SIZE / 2, 18, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        return;
+    }
+
+    // Sol pour blé
     ctx.fillStyle = '#8B4513';
     ctx.fillRect(screenX, screenY, TILE_SIZE - 2, TILE_SIZE - 2);
 
@@ -273,24 +435,51 @@ function drawBuilding(building, emoji, name) {
 
 // Dessiner la scène
 function drawScene() {
-    // Ciel
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, '#87CEEB');
-    gradient.addColorStop(1, '#90EE90');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Dessiner le fond en coordonnées monde -> permet d'avoir un horizon fixe
+    // Horizon en coordonnées mondiales (y) : tout ce qui a y < HORIZON_WORLD_Y est ciel
+    const HORIZON_WORLD_Y = 0; // ligne d'horizon fixe dans le monde
+    const screenHorizonY = HORIZON_WORLD_Y - gameState.camera.y; // position à l'écran
 
-    // Sol (herbe)
-    ctx.fillStyle = '#7CB342';
-    ctx.fillRect(0, canvas.height * 0.3, canvas.width, canvas.height);
+    if (screenHorizonY > 0) {
+        // Dessiner le ciel au-dessus de l'horizon (écran)
+        const gradient = ctx.createLinearGradient(0, 0, 0, screenHorizonY);
+        gradient.addColorStop(0, '#87CEEB');
+        gradient.addColorStop(1, '#BFEFFF');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, screenHorizonY);
 
-    // Parcelles
+        // Dessiner l'herbe sous l'horizon
+        ctx.fillStyle = '#7CB342';
+        ctx.fillRect(0, screenHorizonY, canvas.width, canvas.height - screenHorizonY);
+    } else {
+        // L'horizon est au-dessus de l'écran : tout doit être herbe
+        ctx.fillStyle = '#7CB342';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Label champ de blé
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.font = 'bold 16px Arial';
+    ctx.fillText('🌾 Champ de Blé', gameState.field.startX - gameState.camera.x, gameState.field.startY - gameState.camera.y - 10);
+
+    // Parcelles du champ de blé
     gameState.field.plots.forEach(plot => drawPlot(plot));
+
+    // Label poulailler si débloqué
+    if (gameState.chickenCoop.owned) {
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText('🐔 Poulailler', gameState.chickenCoop.startX - gameState.camera.x, gameState.chickenCoop.startY - gameState.camera.y - 10);
+
+        // Parcelles du poulailler
+        if (gameState.chickenCoop.plots) {
+            gameState.chickenCoop.plots.forEach(plot => drawPlot(plot));
+        }
+    }
 
     // Bâtiments
     drawBuilding(gameState.buildings.market, '💰', 'Marché');
     drawBuilding(gameState.buildings.mill, '⚙️', 'Moulin');
-    drawBuilding(gameState.buildings.chickenCoop, '🐔', 'Poulailler');
     drawBuilding(gameState.buildings.orchard, '🍎', 'Verger');
 
     // Joueur
@@ -324,6 +513,7 @@ function movePlayer() {
 
 // Vérifier collision avec les parcelles
 function checkPlotCollision() {
+    // Parcelles de blé
     gameState.field.plots.forEach(plot => {
         if (plot.state === PLOT_STATES.READY) {
             const plotCenterX = plot.worldX + TILE_SIZE / 2;
@@ -333,17 +523,35 @@ function checkPlotCollision() {
             const dy = gameState.player.y - plotCenterY;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
-            // Si le joueur est sur la parcelle (rayon de détection)
             if (distance < TILE_SIZE / 2 + 10) {
                 harvestPlot(plot);
             }
         }
     });
+
+    // Parcelles d'œufs du poulailler
+    if (gameState.chickenCoop.owned && gameState.chickenCoop.plots) {
+        gameState.chickenCoop.plots.forEach(plot => {
+            if (plot.state === PLOT_STATES.READY) {
+                const plotCenterX = plot.worldX + TILE_SIZE / 2;
+                const plotCenterY = plot.worldY + TILE_SIZE / 2;
+
+                const dx = gameState.player.x - plotCenterX;
+                const dy = gameState.player.y - plotCenterY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < TILE_SIZE / 2 + 10) {
+                    harvestPlot(plot);
+                }
+            }
+        });
+    }
 }
 
 // Mettre à jour la caméra
 function updateCamera() {
     const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
 
     // La caméra suit le joueur horizontalement
     if (gameState.player.x > centerX) {
@@ -352,9 +560,17 @@ function updateCamera() {
         gameState.camera.x = 0;
     }
 
+    if (gameState.player.y > centerY) {
+        gameState.camera.y = gameState.player.y - centerY;
+    } else {
+        gameState.camera.y = 0;
+    }
+
     // Limites
     gameState.camera.x = Math.max(0, gameState.camera.x);
     gameState.camera.x = Math.min(800, gameState.camera.x); // Max scroll
+    gameState.camera.y = Math.max(0, gameState.camera.y);
+    gameState.camera.y = Math.min(600, gameState.camera.y); // Max scroll
 }
 
 // Boucle de jeu
@@ -366,75 +582,70 @@ function gameLoop() {
     requestAnimationFrame(gameLoop);
 }
 
-// Clic sur le canvas
-canvas.addEventListener('click', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left + gameState.camera.x;
-    const clickY = e.clientY - rect.top + gameState.camera.y;
+// Initialiser les event listeners du canvas
+function initCanvasListeners() {
+    canvas.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const clickX = e.clientX - rect.left + gameState.camera.x;
+        const clickY = e.clientY - rect.top + gameState.camera.y;
 
-    // Vérifier clic sur bâtiment
-    for (let key in gameState.buildings) {
-        const building = gameState.buildings[key];
-        if (clickX >= building.x && clickX <= building.x + building.width &&
-            clickY >= building.y && clickY <= building.y + building.height) {
+        // Vérifier clic sur bâtiment
+        for (let key in gameState.buildings) {
+            const building = gameState.buildings[key];
+            if (clickX >= building.x && clickX <= building.x + building.width &&
+                clickY >= building.y && clickY <= building.y + building.height) {
 
-            if (building.owned) {
-                // Déplacer vers le bâtiment
-                gameState.player.targetX = building.x + building.width / 2;
-                gameState.player.targetY = building.y + building.height + 30;
+                if (building.owned) {
+                    // Déplacer vers le bâtiment
+                    gameState.player.targetX = building.x + building.width / 2;
+                    gameState.player.targetY = building.y + building.height + 30;
 
-                // Interagir quand on arrive
-                setTimeout(() => {
-                    const dx = gameState.player.targetX - gameState.player.x;
-                    const dy = gameState.player.targetY - gameState.player.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    // Interagir quand on arrive
+                    setTimeout(() => {
+                        const dx = gameState.player.targetX - gameState.player.x;
+                        const dy = gameState.player.targetY - gameState.player.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
 
-                    if (distance < 10) {
-                        interactBuilding(key);
-                    }
-                }, 500);
-            } else {
-                showNotification('🔒 Bâtiment non débloqué !');
+                        if (distance < 10) {
+                            interactBuilding(key);
+                        }
+                    }, 500);
+                } else {
+                    showNotification('🔒 Bâtiment non débloqué !');
+                }
+                return;
             }
-            return;
         }
-    }
 
-    // Déplacement normal (le joueur récolte automatiquement en marchant)
-    gameState.player.targetX = clickX;
-    gameState.player.targetY = clickY;
-});
+        // Déplacement normal (le joueur récolte automatiquement en marchant)
+        gameState.player.targetX = clickX;
+        gameState.player.targetY = clickY;
+    });
+}
 
 // Récolter une parcelle
 function harvestPlot(plot) {
     plot.state = PLOT_STATES.EMPTY;
     plot.growthStartTime = Date.now();
-    gameState.resources.wheat += 1;
-    gameState.xp += 2;
+
+    if (plot.type === 'egg') {
+        gameState.resources.eggs += 1;
+        gameState.xp += 3;
+        showNotification('🥚 +1 Œuf récolté !');
+    } else {
+        gameState.resources.wheat += 1;
+        gameState.xp += 2;
+        showNotification('🌾 +1 Blé récolté !');
+    }
+
     updateUI();
     saveGame();
-    showNotification('🌾 +1 Blé récolté !');
 }
 
 // Interagir avec bâtiment
 function interactBuilding(buildingKey) {
     if (buildingKey === 'mill') {
-        if (gameState.resources.wheat >= 1) {
-            gameState.resources.wheat -= 1;
-            gameState.resources.flour += 1;
-            gameState.xp += 3;
-            updateUI();
-            saveGame();
-            showNotification('⚙️ +1 Farine produite !');
-        } else {
-            showNotification('Pas assez de blé !');
-        }
-    } else if (buildingKey === 'chickenCoop') {
-        gameState.resources.eggs += 1;
-        gameState.xp += 5;
-        updateUI();
-        saveGame();
-        showNotification('🥚 +1 Œuf récolté !');
+        openMillModal();
     } else if (buildingKey === 'orchard') {
         gameState.resources.fruits += 1;
         gameState.xp += 5;
@@ -442,12 +653,101 @@ function interactBuilding(buildingKey) {
         saveGame();
         showNotification('🍎 +1 Fruit cueilli !');
     } else if (buildingKey === 'market') {
-        sellAllResources();
+        openSellModal();
+    }
+}
+
+// Modal du moulin pour choisir quantité de farine
+function openMillModal() {
+    if (gameState.resources.wheat === 0) {
+        showNotification('Pas assez de blé !');
+        return;
+    }
+
+    const modal = document.getElementById('sellModal');
+    const content = document.querySelector('.sell-modal-content');
+
+    content.innerHTML = `
+                <div class="sell-modal-title">⚙️ Moulin - Faire de la Farine</div>
+                <div class="sell-item">
+                    <div class="sell-item-header">
+                        <span class="sell-item-name">🌾 Blé disponible</span>
+                        <span class="sell-item-stock">${gameState.resources.wheat}</span>
+                    </div>
+                    <div style="color: #718096; font-size: 14px; margin: 10px 0;">
+                        1 Blé = 1 Farine
+                    </div>
+                    <div class="quantity-controls">
+                        <button class="quantity-btn" onclick="changeMillQuantity(-10)">-10</button>
+                        <button class="quantity-btn" onclick="changeMillQuantity(-1)">-</button>
+                        <input type="number" class="quantity-input" id="mill-quantity" 
+                               value="0" min="0" max="${gameState.resources.wheat}" 
+                               onchange="updateMillQuantity(this.value)">
+                        <button class="quantity-btn" onclick="changeMillQuantity(1)">+</button>
+                        <button class="quantity-btn" onclick="changeMillQuantity(10)">+10</button>
+                        <button class="quantity-btn" onclick="setMillMax()">MAX</button>
+                    </div>
+                    <div class="sell-result" id="mill-result">= 0 Farine</div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-confirm" onclick="confirmMill()">⚙️ Transformer</button>
+                    <button class="btn-cancel" onclick="closeSellModal()">❌ Annuler</button>
+                </div>
+            `;
+
+    modal.classList.add('visible');
+}
+
+function changeMillQuantity(delta) {
+    const input = document.getElementById('mill-quantity');
+    const max = gameState.resources.wheat;
+    let newValue = parseInt(input.value) + delta;
+    newValue = Math.max(0, Math.min(max, newValue));
+
+    input.value = newValue;
+    document.getElementById('mill-result').textContent = `= ${newValue} Farine`;
+}
+
+function updateMillQuantity(value) {
+    const max = gameState.resources.wheat;
+    let newValue = parseInt(value) || 0;
+    newValue = Math.max(0, Math.min(max, newValue));
+
+    const input = document.getElementById('mill-quantity');
+    input.value = newValue;
+    document.getElementById('mill-result').textContent = `= ${newValue} Farine`;
+}
+
+function setMillMax() {
+    const max = gameState.resources.wheat;
+    document.getElementById('mill-quantity').value = max;
+    document.getElementById('mill-result').textContent = `= ${max} Farine`;
+}
+
+function confirmMill() {
+    const quantity = parseInt(document.getElementById('mill-quantity').value) || 0;
+
+    if (quantity > 0 && gameState.resources.wheat >= quantity) {
+        gameState.resources.wheat -= quantity;
+        gameState.resources.flour += quantity;
+        gameState.xp += quantity * 3;
+        updateUI();
+        saveGame();
+        closeSellModal();
+        showNotification(`⚙️ +${quantity} Farine produite !`);
+    } else {
+        showNotification('Quantité invalide !');
     }
 }
 
 // Vendre ressources - ouvrir modal
 function openSellModal() {
+    const modal = document.getElementById('sellModal');
+    if (!modal) {
+        console.error('Modal sellModal non trouvé dans le DOM');
+        return;
+    }
+    
     // Réinitialiser les quantités
     sellQuantities.wheat = 0;
     sellQuantities.flour = 0;
@@ -455,16 +755,28 @@ function openSellModal() {
     sellQuantities.fruits = 0;
 
     renderSellModal();
-    document.getElementById('sellModal').classList.add('visible');
+    modal.classList.add('visible');
 }
 
 function closeSellModal() {
-    document.getElementById('sellModal').classList.remove('visible');
+    const modal = document.getElementById('sellModal');
+    if (modal) {
+        modal.classList.remove('visible');
+    }
 }
 
 function renderSellModal() {
-    const container = document.getElementById('sellItems');
-    container.innerHTML = '';
+    const modal = document.getElementById('sellModal');
+    const content = document.querySelector('.sell-modal-content');
+    
+    if (!modal || !content) {
+        console.error('Éléments du modal de vente non trouvés');
+        return;
+    }
+    
+    // Reconstruire complètement le contenu du modal
+    let html = '<div class="sell-modal-title">💰 Vendre des Ressources</div>';
+    html += '<div id="sellItems">';
 
     const resources = [
         { id: 'wheat', name: '🌾 Blé', price: SELL_PRICES.wheat },
@@ -473,38 +785,49 @@ function renderSellModal() {
         { id: 'fruits', name: '🍎 Fruits', price: SELL_PRICES.fruits }
     ];
 
+    let hasResources = false;
     resources.forEach(resource => {
         const stock = gameState.resources[resource.id];
         if (stock === 0) return; // Ne pas afficher si stock vide
-
-        const div = document.createElement('div');
-        div.className = 'sell-item';
-        div.innerHTML = `
-                    <div class="sell-item-header">
-                        <span class="sell-item-name">${resource.name}</span>
-                        <span class="sell-item-stock">Stock: ${stock}</span>
-                    </div>
-                    <div style="color: #718096; font-size: 14px; margin-bottom: 5px;">
-                        Prix unitaire: ${resource.price}€
-                    </div>
-                    <div class="quantity-controls">
-                        <button class="quantity-btn" onclick="changeSellQuantity('${resource.id}', -10)">-10</button>
-                        <button class="quantity-btn" onclick="changeSellQuantity('${resource.id}', -1)">-</button>
-                        <input type="number" class="quantity-input" id="sell-${resource.id}" 
-                               value="0" min="0" max="${stock}" 
-                               onchange="updateSellQuantity('${resource.id}', this.value)">
-                        <button class="quantity-btn" onclick="changeSellQuantity('${resource.id}', 1)">+</button>
-                        <button class="quantity-btn" onclick="changeSellQuantity('${resource.id}', 10)">+10</button>
-                        <button class="quantity-btn" onclick="setSellMax('${resource.id}')">MAX</button>
-                    </div>
-                    <div class="sell-result" id="result-${resource.id}">= 0€</div>
-                `;
-        container.appendChild(div);
+        
+        hasResources = true;
+        html += `
+            <div class="sell-item">
+                <div class="sell-item-header">
+                    <span class="sell-item-name">${resource.name}</span>
+                    <span class="sell-item-stock">Stock: ${stock}</span>
+                </div>
+                <div style="color: #718096; font-size: 14px; margin-bottom: 5px;">
+                    Prix unitaire: ${resource.price}€
+                </div>
+                <div class="quantity-controls">
+                    <button class="quantity-btn" onclick="changeSellQuantity('${resource.id}', -10)">-10</button>
+                    <button class="quantity-btn" onclick="changeSellQuantity('${resource.id}', -1)">-</button>
+                    <input type="number" class="quantity-input" id="sell-${resource.id}" 
+                           value="0" min="0" max="${stock}" 
+                           onchange="updateSellQuantity('${resource.id}', this.value)">
+                    <button class="quantity-btn" onclick="changeSellQuantity('${resource.id}', 1)">+</button>
+                    <button class="quantity-btn" onclick="changeSellQuantity('${resource.id}', 10)">+10</button>
+                    <button class="quantity-btn" onclick="setSellMax('${resource.id}')">MAX</button>
+                </div>
+                <div class="sell-result" id="result-${resource.id}">= 0€</div>
+            </div>
+        `;
     });
 
-    if (container.innerHTML === '') {
-        container.innerHTML = '<p style="text-align: center; color: #718096;">Aucune ressource à vendre !</p>';
+    if (!hasResources) {
+        html += '<p style="text-align: center; color: #718096;">Aucune ressource à vendre !</p>';
     }
+
+    html += '</div>';
+    html += `
+        <div class="modal-actions">
+            <button class="btn-confirm" onclick="confirmSell()">✅ Vendre</button>
+            <button class="btn-cancel" onclick="closeSellModal()">❌ Annuler</button>
+        </div>
+    `;
+
+    content.innerHTML = html;
 }
 
 function changeSellQuantity(resourceId, delta) {
@@ -592,8 +915,14 @@ function buyUpgrade(upgradeKey) {
             gameState.field.gridWidth += 1;
             gameState.field.gridHeight += 1;
             initField();
+        } else if (upgradeKey === 'coopExpand') {
+            gameState.chickenCoop.gridWidth += 1;
+            gameState.chickenCoop.gridHeight += 1;
+            initChickenCoop();
         } else if (upgradeKey === 'fastGrowth') {
             gameState.upgrades.growthSpeed += 0.2;
+        } else if (upgradeKey === 'fastEggs') {
+            gameState.upgrades.eggSpeed += 0.2;
         }
 
         updateUI();
@@ -609,14 +938,25 @@ function buyUpgrade(upgradeKey) {
 function buyBuilding(buildingKey) {
     const building = shopData.buildings[buildingKey];
 
-    if (gameState.buildings[buildingKey].owned) {
+    // Déterminer où stocker le bâtiment (chickenCoop est un cas spécial)
+    const targetObject = buildingKey === 'chickenCoop' ? gameState.chickenCoop : gameState.buildings[buildingKey];
+
+    if (targetObject.owned) {
         showNotification('Déjà possédé !');
         return;
     }
 
     if (gameState.money >= building.cost) {
         gameState.money -= building.cost;
-        gameState.buildings[buildingKey].owned = true;
+        targetObject.owned = true;
+        
+        // Initialiser le poulailler si c'est le cas
+        if (buildingKey === 'chickenCoop') {
+            // S'assurer que les positions sont à jour avant d'initialiser
+            updateLayoutPositions();
+            initChickenCoop();
+        }
+        
         updateUI();
         renderShop();
         saveGame();
@@ -665,7 +1005,7 @@ function renderShop() {
 
     for (let key in shopData.buildings) {
         const building = shopData.buildings[key];
-        const owned = gameState.buildings[key].owned;
+        const owned = key === 'chickenCoop' ? gameState.chickenCoop.owned : gameState.buildings[key].owned;
 
         const div = document.createElement('div');
         div.className = `shop-item ${owned ? 'owned' : ''}`;
@@ -700,9 +1040,13 @@ function saveGame() {
         resources: gameState.resources,
         buildings: {
             mill: { owned: gameState.buildings.mill.owned },
-            chickenCoop: { owned: gameState.buildings.chickenCoop.owned },
             orchard: { owned: gameState.buildings.orchard.owned },
             market: { owned: gameState.buildings.market.owned }
+        },
+        chickenCoop: {
+            owned: gameState.chickenCoop.owned,
+            gridWidth: gameState.chickenCoop.gridWidth,
+            gridHeight: gameState.chickenCoop.gridHeight
         },
         upgrades: gameState.upgrades,
         field: {
@@ -711,7 +1055,9 @@ function saveGame() {
         },
         shopLevels: {
             fieldExpand: shopData.upgrades.fieldExpand.currentLevel,
-            fastGrowth: shopData.upgrades.fastGrowth.currentLevel
+            coopExpand: shopData.upgrades.coopExpand.currentLevel,
+            fastGrowth: shopData.upgrades.fastGrowth.currentLevel,
+            fastEggs: shopData.upgrades.fastEggs.currentLevel
         }
     };
     localStorage.setItem('farmGame2D', JSON.stringify(saveData));
@@ -728,13 +1074,19 @@ function loadGame() {
 
             if (data.buildings) {
                 if (data.buildings.mill) gameState.buildings.mill.owned = data.buildings.mill.owned || false;
-                if (data.buildings.chickenCoop) gameState.buildings.chickenCoop.owned = data.buildings.chickenCoop.owned || false;
                 if (data.buildings.orchard) gameState.buildings.orchard.owned = data.buildings.orchard.owned || false;
                 if (data.buildings.market) gameState.buildings.market.owned = data.buildings.market.owned !== false;
             }
 
+            if (data.chickenCoop) {
+                gameState.chickenCoop.owned = data.chickenCoop.owned || false;
+                gameState.chickenCoop.gridWidth = data.chickenCoop.gridWidth || 4;
+                gameState.chickenCoop.gridHeight = data.chickenCoop.gridHeight || 4;
+            }
+
             if (data.upgrades) {
                 gameState.upgrades.growthSpeed = data.upgrades.growthSpeed || 1;
+                gameState.upgrades.eggSpeed = data.upgrades.eggSpeed || 1;
             }
 
             if (data.field) {
@@ -744,7 +1096,9 @@ function loadGame() {
 
             if (data.shopLevels) {
                 shopData.upgrades.fieldExpand.currentLevel = data.shopLevels.fieldExpand || 0;
+                shopData.upgrades.coopExpand.currentLevel = data.shopLevels.coopExpand || 0;
                 shopData.upgrades.fastGrowth.currentLevel = data.shopLevels.fastGrowth || 0;
+                shopData.upgrades.fastEggs.currentLevel = data.shopLevels.fastEggs || 0;
             }
         } catch (e) {
             console.error('Erreur de chargement:', e);
@@ -754,12 +1108,16 @@ function loadGame() {
 }
 
 // Initialisation
-function init() {
+function initGame() {
     loadGame();
     initField();
+    if (gameState.chickenCoop.owned) {
+        initChickenCoop();
+    }
     updateUI();
     renderShop();
     gameLoop();
 }
 
-init();
+// Le jeu ne démarre que quand on clique sur "Commencer"
+// initGame() est appelé depuis la page d'accueil
