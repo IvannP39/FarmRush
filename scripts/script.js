@@ -99,6 +99,14 @@ const gameState = {
         startY: 450,
         plots: []
     },
+    orchard: {
+        owned: false,
+        gridWidth: 4,
+        gridHeight: 4,
+        startX: 300,
+        startY: 450,
+        plots: []
+    },
     upgrades: {
         fieldSize: 1,
         growthSpeed: 1,
@@ -164,6 +172,13 @@ const shopData = {
             desc: 'Œufs apparaissent 20% plus vite',
             maxLevel: 5,
             currentLevel: 0
+        },
+        orchardExpand: {
+            name: '🍎 Agrandir Verger',
+            cost: 200,
+            desc: 'Ajoute une rangée au verger',
+            maxLevel: 5,
+            currentLevel: 0
         }
     },
     buildings: {
@@ -199,6 +214,12 @@ function updateLayoutPositions() {
     const gap = 40; // pixels entre le champ et le poulailler
     gameState.chickenCoop.startX = gameState.field.startX; // aligner horizontalement
     gameState.chickenCoop.startY = gameState.field.startY + gameState.field.gridHeight * TILE_SIZE + gap;
+    
+    // Verger positionné à droite du poulailler
+    gameState.orchard.startX = gameState.chickenCoop.startX + gameState.chickenCoop.gridWidth * TILE_SIZE + gap;
+    gameState.orchard.startY = gameState.chickenCoop.startY;
+    //gameState.orchard.startX = gameState.field.startX; // aligner horizontalement
+    //gameState.orchard.startY = gameState.chickenCoop.startY + gameState.chickenCoop.gridHeight * TILE_SIZE + gap;
 }
 
 // Initialiser le poulailler
@@ -216,6 +237,26 @@ function initChickenCoop() {
                 worldX: gameState.chickenCoop.startX + x * TILE_SIZE,
                 worldY: gameState.chickenCoop.startY + y * TILE_SIZE,
                 type: 'egg'
+            });
+        }
+    }
+}
+
+// Initialiser le verger
+function initOrchard() {
+    if (!gameState.orchard.owned) return;
+
+    gameState.orchard.plots = [];
+    for (let y = 0; y < gameState.orchard.gridHeight; y++) {
+        for (let x = 0; x < gameState.orchard.gridWidth; x++) {
+            gameState.orchard.plots.push({
+                x: x,
+                y: y,
+                state: PLOT_STATES.EMPTY,
+                growthStartTime: Date.now(),
+                worldX: gameState.orchard.startX + x * TILE_SIZE,
+                worldY: gameState.orchard.startY + y * TILE_SIZE,
+                type: 'fruit'
             });
         }
     }
@@ -253,6 +294,26 @@ function updateGrowth() {
             const elapsed = now - plot.growthStartTime;
             if (elapsed >= eggTime) {
                 plot.state = PLOT_STATES.READY;
+            }
+        });
+    }
+
+    // Fruits du verger (croissance similaire au blé)
+    if (gameState.orchard.owned && gameState.orchard.plots) {
+        gameState.orchard.plots.forEach(plot => {
+            if (plot.state === PLOT_STATES.READY) return;
+
+            const elapsed = now - plot.growthStartTime;
+            const progress = elapsed / growthTime;
+
+            if (progress >= 1) {
+                plot.state = PLOT_STATES.READY;
+            } else if (progress >= 0.75) {
+                plot.state = PLOT_STATES.GROWING_3;
+            } else if (progress >= 0.5) {
+                plot.state = PLOT_STATES.GROWING_2;
+            } else if (progress >= 0.25) {
+                plot.state = PLOT_STATES.GROWING_1;
             }
         });
     }
@@ -312,11 +373,12 @@ function drawPlot(plot) {
         return;
     }
 
-    // Sol pour blé
+      // ---- Sol pour blé / verger ----
+    // On dessine d'abord la terre commune
     ctx.fillStyle = '#8B4513';
     ctx.fillRect(screenX, screenY, TILE_SIZE - 2, TILE_SIZE - 2);
 
-    // Terre labourée
+    // Terre labourée (lignes)
     ctx.strokeStyle = '#654321';
     ctx.lineWidth = 2;
     for (let i = 0; i < 3; i++) {
@@ -326,6 +388,103 @@ function drawPlot(plot) {
         ctx.stroke();
     }
 
+    // ----- Si c'est un fruit (pomme) : dessiner selon plot.state -----
+    if (plot.type === 'fruit') {
+        // position centrale de la "pomme" dans la tuile
+        const cx = screenX + TILE_SIZE / 2;
+        const cy = screenY + TILE_SIZE / 2 + 6;
+
+        if (plot.state === PLOT_STATES.EMPTY) {
+            // petite graine noire au centre
+            ctx.fillStyle = '#111';
+            ctx.beginPath();
+            ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (plot.state === PLOT_STATES.GROWING_1) {
+            // petite pousse verte (tout petit rond)
+            ctx.fillStyle = '#2E7D32';
+            ctx.beginPath();
+            ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (plot.state === PLOT_STATES.GROWING_2) {
+            // jeune pomme verte (plus grosse)
+            ctx.fillStyle = '#43A047';
+            ctx.beginPath();
+            ctx.arc(cx, cy - 2, 7, 0, Math.PI * 2);
+            ctx.fill();
+
+            // petite feuille
+            ctx.fillStyle = '#1B5E20';
+            ctx.beginPath();
+            ctx.ellipse(cx + 7, cy - 10, 3, 6, Math.PI / 4, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (plot.state === PLOT_STATES.GROWING_3) {
+            // pomme presque mûre : plus ronde, mélange vert/rouge
+            // corps
+            ctx.fillStyle = '#F0625F'; // orangé/rose intermédiaire
+            ctx.beginPath();
+            ctx.arc(cx, cy - 4, 8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // reflet
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.beginPath();
+            ctx.arc(cx - 3, cy - 8, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // feuille
+            ctx.fillStyle = '#2E7D32';
+            ctx.beginPath();
+            ctx.ellipse(cx + 8, cy - 12, 3, 6, Math.PI / 4, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (plot.state === PLOT_STATES.READY) {
+            // pomme mûre rouge
+            // corps rouge
+            ctx.fillStyle = '#E53935';
+            ctx.beginPath();
+            ctx.arc(cx, cy - 6, 9, 0, Math.PI * 2);
+            ctx.fill();
+
+            // ombre inférieure
+            ctx.fillStyle = 'rgba(0,0,0,0.15)';
+            ctx.beginPath();
+            ctx.ellipse(cx, cy + 2, 7, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // reflet blanc
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.beginPath();
+            ctx.arc(cx - 4, cy - 12, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // feuille (plus visible)
+            ctx.fillStyle = '#2E7D32';
+            ctx.beginPath();
+            ctx.ellipse(cx + 7, cy - 16, 4, 8, Math.PI / 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // queue / tige
+            ctx.strokeStyle = '#4E342E';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - 15);
+            ctx.lineTo(cx + 2, cy - 12);
+            ctx.stroke();
+
+            // "petits bisous" : deux petits cœurs/points roses près de la pomme
+            ctx.fillStyle = 'rgba(255,105,180,0.9)';
+            ctx.beginPath();
+            ctx.arc(cx + 10, cy - 7, 2.2, 0, Math.PI * 2); // petit point rose
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx + 12.5, cy - 10, 1.6, 0, Math.PI * 2); // 2e point
+            ctx.fill();
+        }
+        // on sort, on ne passe pas au dessin "blé"
+        return;
+    }
+
+    // ----- Sinon (par défaut) : dessin du blé (ton code existant) -----
     // Blé selon le stade
     if (plot.state === PLOT_STATES.GROWING_1) {
         ctx.fillStyle = '#90EE90';
@@ -477,6 +636,18 @@ function drawScene() {
         }
     }
 
+    // Label verger si débloqué
+    if (gameState.orchard.owned) {
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText('🍎 Verger', gameState.orchard.startX - gameState.camera.x, gameState.orchard.startY - gameState.camera.y - 10);
+
+        // Parcelles du verger
+        if (gameState.orchard.plots) {
+            gameState.orchard.plots.forEach(plot => drawPlot(plot));
+        }
+    }
+
     // Bâtiments
     drawBuilding(gameState.buildings.market, '💰', 'Marché');
     drawBuilding(gameState.buildings.mill, '⚙️', 'Moulin');
@@ -532,6 +703,24 @@ function checkPlotCollision() {
     // Parcelles d'œufs du poulailler
     if (gameState.chickenCoop.owned && gameState.chickenCoop.plots) {
         gameState.chickenCoop.plots.forEach(plot => {
+            if (plot.state === PLOT_STATES.READY) {
+                const plotCenterX = plot.worldX + TILE_SIZE / 2;
+                const plotCenterY = plot.worldY + TILE_SIZE / 2;
+
+                const dx = gameState.player.x - plotCenterX;
+                const dy = gameState.player.y - plotCenterY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < TILE_SIZE / 2 + 10) {
+                    harvestPlot(plot);
+                }
+            }
+        });
+    }
+
+    // Parcelles de fruits du verger
+    if (gameState.orchard.owned && gameState.orchard.plots) {
+        gameState.orchard.plots.forEach(plot => {
             if (plot.state === PLOT_STATES.READY) {
                 const plotCenterX = plot.worldX + TILE_SIZE / 2;
                 const plotCenterY = plot.worldY + TILE_SIZE / 2;
@@ -644,6 +833,10 @@ function harvestPlot(plot) {
         gameState.resources.eggs += 1;
         gameState.xp += 3;
         showNotification('🥚 +1 Œuf récolté !');
+    } else if (plot.type === 'fruit') {
+        gameState.resources.fruits += 1;
+        gameState.xp += 5;
+        showNotification('🍎 +1 Fruit récolté !');
     } else {
         gameState.resources.wheat += 1;
         gameState.xp += 2;
@@ -932,11 +1125,26 @@ function buyUpgrade(upgradeKey) {
                 updateLayoutPositions();
                 initChickenCoop();
             }
+            // Si le verger existe déjà, repositionner et réinitialiser ses parcelles
+            if (gameState.orchard.owned) {
+                updateLayoutPositions();
+                initOrchard();
+            }
         } else if (upgradeKey === 'coopExpand') {
             gameState.chickenCoop.gridWidth += 1;
             gameState.chickenCoop.gridHeight += 1;
             updateLayoutPositions();
             initChickenCoop();
+            // Si le verger existe déjà, repositionner et réinitialiser
+            if (gameState.orchard.owned) {
+                updateLayoutPositions();
+                initOrchard();
+            }
+        } else if (upgradeKey === 'orchardExpand') {
+            gameState.orchard.gridWidth += 1;
+            gameState.orchard.gridHeight += 1;
+            updateLayoutPositions();
+            initOrchard();
         } else if (upgradeKey === 'fastGrowth') {
             gameState.upgrades.growthSpeed += 0.2;
         } else if (upgradeKey === 'fastEggs') {
@@ -973,6 +1181,11 @@ function buyBuilding(buildingKey) {
             // S'assurer que les positions sont à jour avant d'initialiser
             updateLayoutPositions();
             initChickenCoop();
+        } else if (buildingKey === 'orchard') {
+            // Initialiser le verger
+            gameState.orchard.owned = true;
+            updateLayoutPositions();
+            initOrchard();
         }
         
         updateUI();
@@ -1006,7 +1219,14 @@ function renderShop() {
 
         // Déterminer si l'upgrade est disponible (ex: coopExpand nécessite poulailler possédé)
         let locked = false;
-        if (key === 'coopExpand' && !gameState.chickenCoop.owned) locked = true;
+        let lockMessage = '';
+        if (key === 'coopExpand' && !gameState.chickenCoop.owned) {
+            locked = true;
+            lockMessage = 'Débloquez le poulailler d\'abord';
+        } else if (key === 'orchardExpand' && !gameState.orchard.owned) {
+            locked = true;
+            lockMessage = 'Débloquez le verger d\'abord';
+        }
 
         const div = document.createElement('div');
         div.className = `shop-item ${locked ? 'locked' : ''}`;
@@ -1015,7 +1235,7 @@ function renderShop() {
         let buttonHtml = '';
         if (!maxed) {
             if (locked) {
-                buttonHtml = `<button class="btn" disabled title="Débloquez le poulailler d'abord">Améliorer</button>`;
+                buttonHtml = `<button class="btn" disabled title="${lockMessage}">Améliorer</button>`;
             } else {
                 buttonHtml = `<button class="btn" onclick="buyUpgrade('${key}')">Améliorer</button>`;
             }
@@ -1083,6 +1303,11 @@ function saveGame() {
             gridWidth: gameState.chickenCoop.gridWidth,
             gridHeight: gameState.chickenCoop.gridHeight
         },
+        orchard: {
+            owned: gameState.orchard.owned,
+            gridWidth: gameState.orchard.gridWidth,
+            gridHeight: gameState.orchard.gridHeight
+        },
         upgrades: gameState.upgrades,
         field: {
             gridWidth: gameState.field.gridWidth,
@@ -1091,6 +1316,7 @@ function saveGame() {
         shopLevels: {
             fieldExpand: shopData.upgrades.fieldExpand.currentLevel,
             coopExpand: shopData.upgrades.coopExpand.currentLevel,
+            orchardExpand: shopData.upgrades.orchardExpand.currentLevel,
             fastGrowth: shopData.upgrades.fastGrowth.currentLevel,
             fastEggs: shopData.upgrades.fastEggs.currentLevel
         }
@@ -1119,6 +1345,12 @@ function loadGame() {
                 gameState.chickenCoop.gridHeight = data.chickenCoop.gridHeight || 4;
             }
 
+            if (data.orchard) {
+                gameState.orchard.owned = data.orchard.owned || false;
+                gameState.orchard.gridWidth = data.orchard.gridWidth || 4;
+                gameState.orchard.gridHeight = data.orchard.gridHeight || 4;
+            }
+
             if (data.upgrades) {
                 gameState.upgrades.growthSpeed = data.upgrades.growthSpeed || 1;
                 gameState.upgrades.eggSpeed = data.upgrades.eggSpeed || 1;
@@ -1132,6 +1364,7 @@ function loadGame() {
             if (data.shopLevels) {
                 shopData.upgrades.fieldExpand.currentLevel = data.shopLevels.fieldExpand || 0;
                 shopData.upgrades.coopExpand.currentLevel = data.shopLevels.coopExpand || 0;
+                shopData.upgrades.orchardExpand.currentLevel = data.shopLevels.orchardExpand || 0;
                 shopData.upgrades.fastGrowth.currentLevel = data.shopLevels.fastGrowth || 0;
                 shopData.upgrades.fastEggs.currentLevel = data.shopLevels.fastEggs || 0;
             }
@@ -1148,6 +1381,9 @@ function initGame() {
     initField();
     if (gameState.chickenCoop.owned) {
         initChickenCoop();
+    }
+    if (gameState.orchard.owned) {
+        initOrchard();
     }
     updateUI();
     renderShop();
