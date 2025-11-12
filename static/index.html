@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌾 Ma Petite Ferme 2D</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <div class="hud">
+            <div class="hud-title">🌾 Ma Petite Ferme</div>
+            <div class="hud-stats">
+                <div>💰 <span id="money">50</span>€</div>
+                <div>🌟 <span id="xp">0</span> XP</div>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+
+        <div class="shop-panel">
+            <div class="shop-title">📦 Ressources</div>
+            <div class="resource-grid">
+                <div class="resource-item">
+                    <div class="resource-icon">🌾</div>
+                    <div>Blé</div>
+                    <div class="resource-amount" id="wheat">0</div>
+                </div>
+                <div class="resource-item">
+                    <div class="resource-icon">⚙️</div>
+                    <div>Farine</div>
+                    <div class="resource-amount" id="flour">0</div>
+                </div>
+                <div class="resource-item">
+                    <div class="resource-icon">🥚</div>
+                    <div>Œufs</div>
+                    <div class="resource-amount" id="eggs">0</div>
+                </div>
+                <div class="resource-item">
+                    <div class="resource-icon">🍎</div>
+                    <div>Fruits</div>
+                    <div class="resource-amount" id="fruits">0</div>
+                </div>
+            </div>
+            <button class="btn btn-sell" onclick="openSellModal()">💰 Vendre Ressources</button>
+
+            <div class="shop-title" style="margin-top: 20px;">🏗️ Améliorations</div>
+            <div id="upgradesList"></div>
+
+            <div class="shop-title" style="margin-top: 20px;">🏢 Bâtiments</div>
+            <div id="buildingsList"></div>
+        </div>
+
+        <div class="controls-info">
+            <div><strong>🎮 Contrôles:</strong></div>
+            <div>🖱️ Cliquez pour déplacer</div>
+            <div>🌾 Marchez sur le blé pour récolter</div>
+            <div>🏗️ Cliquez sur bâtiments pour interagir</div>
+        </div>
+
+        <div id="sellModal" class="sell-modal">
+            <div class="sell-modal-content">
+                <div class="sell-modal-title">💰 Vendre des Ressources</div>
+                <div id="sellItems"></div>
+                <div class="modal-actions">
+                    <button class="btn-confirm" onclick="confirmSell()">✅ Vendre</button>
+                    <button class="btn-cancel" onclick="closeSellModal()">❌ Annuler</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
